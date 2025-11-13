@@ -201,8 +201,11 @@
 
 <script>
 function $(s){ return document.querySelector(s); }
-function log(m){ const e=$('#log'); e.textContent+=m+'
-'; e.scrollTop=e.scrollHeight; }
+function log(m){
+  const e = $('#log');
+  e.textContent += m + '\n';
+  e.scrollTop = e.scrollHeight;
+}
 function setStatus(t){ $('#status').textContent=t; }
 function setSend(t){ $('#sendState').textContent=t; }
 
