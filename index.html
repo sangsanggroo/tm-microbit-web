@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Teachable Machine → micro:bit (4 classes, Web Serial)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <!-- TFJS & TM Image -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.18.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.5/dist/teachablemachine-image.min.js"></script>
+
+  <style>
+    :root{
+      --fg:#111;--muted:#666;--bg:#fff;--card:#fafafa;
+      --bd:#e5e7eb;--acc:#2563eb;--section-bg:#f9fafb;--accent:#5b21b6;
+    }
+    *{box-sizing:border-box}
+    body{
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      background:#fff;margin:0;color:var(--fg)
+    }
+
+    header,footer{max-width:980px;margin:24px auto 8px;padding:0 16px}
+
+    h1{
+      font-size:24px;
+      margin:0 0 6px;
+      font-weight:700;
+    }
+
+    main{
+      max-width:980px;margin:0 auto 32px;padding:0 16px;
+      display:grid;grid-template-columns:1fr 1fr;gap:16px
+    }
+
+    .card{
+      background:#fafafa;border:1px solid var(--bd);
+      border-radius:14px;padding:14px
+    }
+
+    section.card > .block{
+      background:var(--section-bg);
+      border:1px solid var(--bd);
+      border-radius:10px;
+      padding:12px;
+      margin-top:10px
+    }
+
+    .tip{
+      font-size:13px;
+      font-weight:700;
+      color:var(--accent);
+      margin-bottom:8px;
+      line-height:1.4;
+    }
+
+    label{
+      display:block;margin:.6rem 0 .25rem;
+      font-size:13px;color:#333
+    }
+
+    input[type="text"],input[type="number"]{
+      width:100%;padding:10px;border:1px solid var(--bd);
+      border-radius:10px;background:#fff
+    }
+
+    input[readonly]{
+      background:#f3f3f3;color:#555;cursor:not-allowed
+    }
+
+    .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+
+    button{
+      padding:9px 12px;border-radius:10px;
+      border:1px solid var(--bd);background:#fff;cursor:pointer
+    }
+    button.primary{
+      background:#2563eb;border-color:#2563eb;color:#fff
+    }
+
+    .muted{color:var(--muted);font-size:13px}
+
+    #log,#pred{
+      height:160px;overflow:auto;padding:10px;
+      background:#0b1020;color:#e7f1ff;
+      border-radius:10px;
+      font-family:ui-monospace,Consolas,monospace
+    }
+    #pred{height:210px;margin-top:8px}
+
+    video{
+      width:100%;display:block;border-radius:12px;background:#000
+    }
+
+    .badge{
+      background:#eef;border:1px solid #cdd6ff;border-radius:999px;
+      padding:2px 8px;font-size:12px;margin-left:6px
+    }
+
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+    .copyright{
+      max-width:980px;margin:8px auto 24px;padding:0 16px;
+      text-align:center;color:#888;font-size:12px
+    }
+  </style>
+</head>
+
+<body>
+<header>
+  <h1>Teachable Machine → micro:bit (4 classes)</h1>
+</header>
+
+<main>
+  <section class="card">
+
+    <!-- 1. URL + 버튼 구역 -->
+    <div class="block">
+      <p class="tip">🟣 Teachable Machine 모델 URL을 입력하세요. (model.json은 자동 추가됩니다)</p>
+
+      <input id="modelUrl" type="text"
+        placeholder="예: https://teachablemachine.withgoogle.com/models/XXXX/" />
+
+      <div class="row">
+        <button id="loadBtn" class="primary">1) Load model</button>
+        <button id="connectBtn">2) Connect micro:bit</button>
+        <button id="disconnectBtn">Disconnect</button>
+        <button id="startBtn">3) Start</button>
+        <button id="stopBtn">Stop</button>
+      </div>
+    </div>
+
+    <!-- 2. 라벨 자동확인 구역 -->
+    <div class="block">
+      <p class="tip">🟣 티처블 머신에서 입력한 클래스명을 확인하세요.</p>
+
+      <div class="grid2">
+        <div>
+          <label>Class 1 → 전송 값: <b>0</b></label>
+          <input id="lab0" type="text" readonly placeholder="가위" />
+        </div>
+        <div>
+          <label>Class 2 → 전송 값: <b>1</b></label>
+          <input id="lab1" type="text" readonly placeholder="바위" />
+        </div>
+        <div>
+          <label>Class 3 → 전송 값: <b>2</b></label>
+          <input id="lab2" type="text" readonly placeholder="보" />
+        </div>
+        <div>
+          <label>Class 4 → 전송 값: <b>3</b></label>
+          <input id="lab3" type="text" readonly placeholder="배경" />
+        </div>
+      </div>
+
+      <div class="muted" style="margin-top:4px">※ 모델 라벨이 자동으로 채워집니다.</div>
+    </div>
+
+    <!-- 3. 임계값/로그 구역 -->
+    <div class="block">
+
+      <label class="tip" style="margin-bottom:4px">🟣 임계값(0~1)</label>
+
+      <input id="threshold" type="number" step="0.01" min="0" max="1" value="0.70" />
+
+      <div class="row" style="margin-top:15px">
+        <div class="tip" style="font-weight:700">🟣 상태: <span id="status">준비됨</span></div>
+        <div>전송: <span id="sendState" class="badge">-</span></div>
+      </div>
+
+      <div class="row" style="margin-top:20px">
+        <span class="muted">포트 확인용 → </span>
+        <button id="test0">Test 0</button>
+        <button id="test1">Test 1</button>
+        <button id="test2">Test 2</button>
+        <button id="test3">Test 3</button>
+      </div>
+
+      <label style="margin-top:15px" class="tip">🟣 로그</label>
+      <div id="log"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <video id="webcam" autoplay playsinline muted></video>
+
+    <div class="muted" style="margin-top:6px">Start를 누르면 카메라 접근 권한을 요청합니다.</div>
+
+    <label style="margin-top:10px">예측 (Top-3)</label>
+    <div id="pred"></div>
+  </section>
+</main>
+
+<footer class="muted" style="font-size:12px;text-align:center">
+  HTTPS + Chrome/Edge 필요. micro:bit에는 UART 수신 코드가 올라가 있어야 합니다.
+</footer>
+
+<div class="copyright">
+  COPYRIGHT © EDUPY ALL RIGHTS RESERVED
+</div>
+
+<script>
+function $(s){ return document.querySelector(s); }
+function log(m){ const e=$('#log'); e.textContent+=m+'
+'; e.scrollTop=e.scrollHeight; }
+function setStatus(t){ $('#status').textContent=t; }
+function setSend(t){ $('#sendState').textContent=t; }
+
+let model, labels=[];
+let port, writer, reader;
+let running=false, lastSent=null, lastSendTime=0;
+const SEND_INTERVAL=140, PRED_INTERVAL=120;
+const webcamEl=document.getElementById('webcam');
+
+/* URL 자동 model.json */
+function normalizeModelUrl(url){
+  if(!url) return "";
+  url=url.trim();
+  if(!url.endsWith("/")) url+="/";
+  if(!url.endsWith("model.json")) url+="model.json";
+  return url;
+}
+
+/* 라벨 텍스트박스 자동 채우기 */
+function fillLabels(ls){
+  if(ls.length>=1) $('#lab0').value=ls[0];
+  if(ls.length>=2) $('#lab1').value=ls[1];
+  if(ls.length>=3) $('#lab2').value=ls[2];
+  if(ls.length>=4) $('#lab3').value=ls[3];
+}
+
+/* 모델 라벨 = 전송 인덱스 */
+function labelToByte(name){
+  const idx = labels.indexOf(name);
+  if(idx>=0 && idx<4) return String(idx);
+  return "";
+}
+
+/* Load model */
+async function loadModel(){
+  const url=normalizeModelUrl($('#modelUrl').value);
+  if(!url){ alert("URL을 입력하세요."); return; }
+
+  try{
+    model = await tmImage.load(url, url.replace("model.json","metadata.json"));
+    labels = model.getClassLabels() || [];
+    fillLabels(labels);
+
+    setStatus("✅ 모델 로드 완료");
+    log("라벨: "+labels.join(", "));
+  }catch(e){
+    setStatus("❌ 모델 로드 실패");
+    log("에러: "+e.message);
+  }
+}
+
+/* Serial Connect */
+async function connectSerial(){
+  if(!("serial" in navigator)){
+    alert("Chrome/Edge 최신버전 필요합니다.");
+    return;
+  }
+  try{
+    port = await navigator.serial.requestPort();
+    await port.open({baudRate:115200});
+    writer = port.writable.getWriter();
+    reader = port.readable.getReader();
+    setStatus("✅ micro:bit 연결됨");
+  }catch(e){
+    setStatus("❌ 연결 실패");
+    log(e.message);
+  }
+}
+
+/* Disconnect */
+$('#disconnectBtn').onclick = async ()=>{
+  running=false;
+  try{
+    if(reader){ try{await reader.cancel();}catch{} reader.releaseLock(); reader=null; }
+    if(writer){ try{await writer.close();}catch{} writer.releaseLock(); writer=null; }
+    if(port){ try{await port.close();}catch{} port=null; }
+    setStatus("🔌 연결 해제됨");
+  }catch(e){
+    log(e.message);
+  }
+};
+
+/* Webcam start */
+async function startWebcam(){
+  if(webcamEl.srcObject) return;
+  const stream = await navigator.mediaDevices.getUserMedia({video:true});
+  webcamEl.srcObject=stream;
+  await webcamEl.play();
+}
+
+/* Prediction loop */
+async function loopPredict(){
+  if(!model || !running) return;
+
+  try{
+    const raw = await model.predict(webcamEl);
+    const preds = raw.map((p,i)=>({
+      label:(p.className || p.label || ("class"+i)),
+      prob:p.probability ?? 0
+    })).sort((a,b)=>b.prob-a.prob);
+
+    $('#pred').innerHTML =
+      preds.slice(0,3).map((r,i)=>`${i+1}. ${r.label} - ${(r.prob*100).toFixed(1)}%`).join("<br>");
+
+    const top=preds[0];
+    const thr=parseFloat($('#threshold').value||"0.7");
+
+    if(top && top.prob>=thr){
+      const out=labelToByte(top.label);
+      const now=performance.now();
+      if(writer && out && (out!==lastSent || (now-lastSentTime)>SEND_INTERVAL)){
+        await writer.write(new TextEncoder().encode(out));
+        setSend(out);
+        lastSent=out; lastSentTime=now;
+      }
+    } else {
+      setSend("-");
+    }
+
+  }catch(e){
+    log("예측 오류: "+e.message);
+  }
+
+  if(running) setTimeout(loopPredict,PRED_INTERVAL);
+}
+
+/* Button binding */
+$('#loadBtn').onclick = loadModel;
+$('#connectBtn').onclick = connectSerial;
+
+$('#startBtn').onclick = async ()=>{
+  if(!model){ alert("모델을 먼저 로드하세요."); return; }
+  await startWebcam();
+  running=true;
+  setStatus("▶️ 예측 실행 중");
+  loopPredict();
+};
+
+$('#stopBtn').onclick = ()=>{
+  running=false;
+  setSend("-");
+  setStatus("⏸ 중지됨");
+};
+
+/* Test buttons */
+[0,1,2,3].forEach(i=>{
+  document.querySelector('#test'+i).onclick = async ()=>{
+    if(!writer){ log("⚠ 연결 안 됨"); return; }
+    await writer.write(new TextEncoder().encode(String(i)));
+    setSend(String(i));
+    log("Test 전송: "+i);
+  };
+});
+</script>
+
+</body>
+</html>
